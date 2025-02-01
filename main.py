@@ -1,20 +1,19 @@
 import pygame
 import random
 from database_setup import database
+import string
 
-# Initialize pygame
 pygame.init()
 
-# Screen dimensions
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 
-# Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
+
 
 class Player:
     def __init__(self):
@@ -22,7 +21,7 @@ class Player:
         self.max_hp = 100
         self.speed = 5
         self.damage = 10
-        self.fire_rate = 1.0  # Fire rate multiplier
+        self.fire_rate = 0.25  # Fire rate multiplier
         self.x = SCREEN_WIDTH // 2
         self.y = SCREEN_HEIGHT - 50
         self.shoot_cooldown = 0  # Cooldown timer for shooting
@@ -47,15 +46,18 @@ class Player:
     def draw(self, screen):
         screen.blit(self.sprite, (self.x, self.y))
 
+
 class Enemy:
     def __init__(self, wave):
-        self.hp = 10 + wave * 3 // 2
+        self.hp = 10 + wave * 2
         self.speed = 1 + wave // 10
         self.damage = 5 + wave // 2
         self.x = random.randint(0, SCREEN_WIDTH - 40)
         self.y = random.randint(-200, -50)
         self.direction = random.choice([-1, 1])
         self.shoot_cooldown = random.randint(60, 120)
+        self.sprite = pygame.image.load("data/enemy.png")  # Load player sprite
+        self.sprite = pygame.transform.scale(self.sprite, (40, 40))
 
     def move(self):
         if self.y < SCREEN_HEIGHT // 2:
@@ -73,7 +75,8 @@ class Enemy:
             self.shoot_cooldown -= 1
 
     def draw(self, screen):
-        pygame.draw.rect(screen, RED, (self.x, self.y, 40, 40))
+        screen.blit(self.sprite, (self.x, self.y))
+
 
 class Bullet:
     def __init__(self, x, y, speed):
@@ -88,6 +91,7 @@ class Bullet:
         color = BLUE if self.speed < 0 else RED
         pygame.draw.rect(screen, color, (self.x, self.y, 5, 10))
 
+
 class Game:
     def __init__(self):
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -96,18 +100,19 @@ class Game:
         self.font = pygame.font.Font(None, 36)
         self.running = True
         self.wave = 1
-        self.total_enemies = 20
+        self.total_enemies = 10 + self.wave * 2
         self.enemies_killed = 0
         self.enemies = []
         self.player = Player()
         self.player_bullets = []
         self.enemy_bullets = []
         self.state = "menu"  # menu, game, pause, game_over, upgrade, enter_name
-        self.player_name = "enter your name"  # New attribute for player name
+        self.player_name = ""  # New attribute for player name
         self.leaderboard = []  # New attribute for leaderboard
         self.game_over_timer = 0
         self.database = database()
-        
+        self.okay_to_use = list(string.ascii_letters + "_")
+
     def draw_text(self, text, x, y, color=WHITE):
         text_surface = self.font.render(text, True, color)
         self.screen.blit(text_surface, (x, y))
@@ -158,7 +163,7 @@ class Game:
         self.player_bullets = []
         self.enemy_bullets = []
         self.enemies = []
-        self.player_name = "enter your name"
+        self.player_name = ""
 
     def upgrade_menu(self):
         self.screen.fill(BLACK)
@@ -198,23 +203,23 @@ class Game:
                         self.apply_upgrade(event.key)
                         self.state = "game"
                     if self.state == "enter_name":
-                        if event.key == pygame.K_RETURN and self.player_name != "enter your name":
+                        if event.key == pygame.K_RETURN and self.player_name:
                             self.state = "game"  # Transition back to menu after entering name
                         elif event.key == pygame.K_BACKSPACE:
                             self.player_name = self.player_name[:-1]
-                        else:
+                        elif event.unicode in self.okay_to_use:
                             self.player_name += event.unicode
 
             if self.state == "menu":
                 data = self.database.get_player_progress()
-                self.draw_text("Space Shooter", SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT // 2 - 50)
-                self.draw_text("Press Enter to Start", SCREEN_WIDTH // 2 - 120, SCREEN_HEIGHT // 2)
+                self.draw_text("Space Shooter", SCREEN_WIDTH // 3 * 2 - 100, SCREEN_HEIGHT // 2 - 50)
+                self.draw_text("Press Enter to Start", SCREEN_WIDTH // 3 * 2 - 120, SCREEN_HEIGHT // 2)
                 self.draw_text("Leaderboard", SCREEN_WIDTH // 10 - 25, SCREEN_HEIGHT // 8 - 50)
-                items = list(data.items())  # Преобразуем пары (ключ, значение) в список
+                items = list(data.items())
                 for i in range(len(items)):
                     key, value = items[i]
                     self.draw_text(str(key), 10, SCREEN_HEIGHT // 8 + i * 100)
-                    self.draw_text(str(value), 210, SCREEN_HEIGHT // 8 + i * 100)
+                    self.draw_text(f"{str(value)} waves", 210, SCREEN_HEIGHT // 8 + i * 100)
 
             elif self.state == "game":
                 keys = pygame.key.get_pressed()
@@ -258,7 +263,7 @@ class Game:
                 self.draw_text(f"Wave: {self.wave}", 10, 40)
 
                 if self.player.hp <= 0:
-                    self.database.save_player_progress(self.player_name, self.wave - 1)
+                    self.database.save_player_progress(self.player_name, self.wave)
                     self.state = "game_over"
                     self.game_over_timer = pygame.time.get_ticks()
 
@@ -271,20 +276,23 @@ class Game:
 
             elif self.state == "game_over":
                 elapsed_time = (pygame.time.get_ticks() - self.game_over_timer) / 1000
-                if elapsed_time >= 10: 
+                if elapsed_time >= 10:
                     self.reset_game()
                     self.state = "menu"
                 else:
                     self.draw_text("Game Over", SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT // 2 - 50)
-                    self.draw_text(f"Returning to menu in {10 - int(elapsed_time)} seconds", SCREEN_WIDTH // 2 - 200, SCREEN_HEIGHT // 2)
+                    self.draw_text(f"Returning to menu in {10 - int(elapsed_time)} seconds", SCREEN_WIDTH // 2 - 200,
+                                   SCREEN_HEIGHT // 2)
             elif self.state == "enter_name":
                 self.draw_text("Enter your name:", SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT // 2 - 50)
-                self.draw_text(self.player_name, SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT // 2)
+                if (self.player_name != ""):
+                    self.draw_text(self.player_name, SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT // 2)
 
             pygame.display.flip()
             self.clock.tick(60)
 
         pygame.quit()
+
 
 if __name__ == "__main__":
     game = Game()

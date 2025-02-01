@@ -1,5 +1,6 @@
 import sqlite3
 
+
 class database():
     def __init__(self):
         conn = sqlite3.connect('leaderboard.db')
@@ -19,11 +20,16 @@ class database():
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO players (name, last_wave) VALUES (?, ?)
-            ON CONFLICT(name) DO UPDATE SET last_wave=excluded.last_wave
+            ON CONFLICT(name)
+            DO UPDATE SET last_wave = 
+              CASE 
+                WHEN excluded.last_wave > last_wave THEN excluded.last_wave
+                ELSE last_wave 
+              END;
         ''', (name, last_wave))
         conn.commit()
         conn.close()
-        
+
     def get_player_progress(self):
         conn = sqlite3.connect('leaderboard.db')
         cursor = conn.cursor()
@@ -31,4 +37,3 @@ class database():
         conn.close()
         data = {player: score for player, score in rows}
         return data
-
